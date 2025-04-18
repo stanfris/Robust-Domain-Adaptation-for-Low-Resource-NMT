@@ -36,7 +36,7 @@ parser.add_argument('--test_split', default='test', type=str,
                     help='Split to use for test')
 
 # Output
-parser.add_argument('--output_dir', default='./results', type=str,
+parser.add_argument('--output_dir', default='../results', type=str,
                     help='Directory to save checkpoints and logs')
 
 # Training arguments
@@ -97,7 +97,7 @@ if __name__ == "__main__":
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name)
 
     # change the splits for actual training. here, using flores-dev as training set because it's small (<1k examples)
-    tokenized_train_dataset = preprocess_data(train_dataset, tokenizer, args.src_lang, args.tgt_lang, "train")
+    tokenized_train_dataset = preprocess_data(train_dataset, tokenizer, args.src_lang, args.tgt_lang, "dev")
     tokenized_dev_dataset = preprocess_data(dev_dataset, tokenizer, args.src_lang, args.tgt_lang, "dev")
     tokenized_test_dataset = preprocess_data(test_dataset, tokenizer, args.src_lang, args.tgt_lang, "test")
 
