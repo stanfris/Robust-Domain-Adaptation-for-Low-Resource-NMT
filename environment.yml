@@ -1,8 +1,16 @@
-name: NLP2-env
+name: nlp2
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.10
   - pip
-  - pytorch
-  - tqdm
+  - pip:
+      - transformers==4.49
+      - datasets
+      - evaluate
+      - torch
+      - sacremoses
+      - sacrebleu
+      - unbabel-comet
+      - accelerate>=0.26.0
