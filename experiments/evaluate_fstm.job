@@ -3,11 +3,10 @@
 #SBATCH --partition=gpu_a100
 #SBATCH --gres=gpu:1
 #SBATCH --gpus=1
-#SBATCH --job-name=CLIP_fairface
+#SBATCH --job-name=evaluate
 #SBATCH --ntasks=1
 #SBATCH --time=04:00:00
-#SBATCH --mem=30000M
-#SBATCH --output=FairFace_CLIP_%A.out
+#SBATCH --output=slurm/slurm_%A.out
 
 module purge
 module load 2024
@@ -18,4 +17,4 @@ source activate nlp2
 # Run your code
 cd ../src
 
-python train.py 
+python -m evaluate_model --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent

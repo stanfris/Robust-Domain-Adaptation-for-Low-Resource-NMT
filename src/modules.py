@@ -1,6 +1,6 @@
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, DataCollatorForSeq2Seq, Seq2SeqTrainingArguments, Seq2SeqTrainer
-from datasets import load_dataset, Dataset, DatasetDict
+from datasets import load_dataset, Dataset, DatasetDict, load_from_disk
 from evaluate import load
 import numpy as np
 # import vllm
@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 # PREPROCESSING
 # function to tokenize dataset for translation tasks
-def preprocess_data(dataset_dict, tokenizer, src_lang, tgt_lang, split, max_length=128):
+def preprocess_data(dataset_dict, tokenizer_src, tokenizer_tgt, src_lang, tgt_lang, split, max_length=128):
     """
     Preprocess translation datasets
 
@@ -25,8 +25,9 @@ def preprocess_data(dataset_dict, tokenizer, src_lang, tgt_lang, split, max_leng
     def preprocess_function(examples):
         inputs = examples[src_lang]
         targets = examples[tgt_lang]
+        print(targets[:8])
 
-        model_inputs = tokenizer(
+        model_inputs = tokenizer_src(
             inputs,
             max_length=max_length,
             truncation=True,
@@ -34,7 +35,7 @@ def preprocess_data(dataset_dict, tokenizer, src_lang, tgt_lang, split, max_leng
             return_tensors="pt"
         )
 
-        labels = tokenizer(
+        labels = tokenizer_tgt(
             targets,
             max_length=max_length,
             truncation=True,
@@ -91,13 +92,15 @@ def compute_metrics_val(tokenizer, eval_preds):
     preds, labels = eval_preds
     decoded_preds, decoded_labels = postprocess_predictions(preds, labels, tokenizer)
 
+    print(decoded_preds[0:8], decoded_labels[0:8])
+
     # Calculate BLEU score
     bleu = load("sacrebleu")
     results = bleu.compute(predictions=decoded_preds, references=[[l] for l in decoded_labels])
 
     return {"bleu": results["score"]}
 
-def compute_metrics_test(src, tgt, preds, tokenizer, bleu=True, comet=False):
+def compute_metrics_test(src, tgt, preds, tokenizer, bleu=True, comet=False, bert_score=False):
     """
     Calculate BLEU score for predictions
 
@@ -111,17 +114,25 @@ def compute_metrics_test(src, tgt, preds, tokenizer, bleu=True, comet=False):
         metrics: Dictionary containing BLEU score
     """
     # detokenize 
+
+    metrics = {}
+
     if bleu:
         bleu = load("sacrebleu")
         results = bleu.compute(predictions=preds, references=[[l] for l in tgt])
-        score = results["score"]
+        metrics["bleu"] = results["score"]
 
     if comet:
         comet = load("comet")
-        results = comet.compute(predictions=preds, references=tgt, source=src)
-        score = results["score"]
+        results = comet.compute(predictions=preds, references=tgt, sources=src)
+        metrics["comet"] = results["mean_score"]
+    
+    if bert_score:
+        bert_score = load("bertscore")
+        results = bert_score.compute(predictions=preds, references=tgt, lang='ru')
+        metrics["bert_score_f1"] = np.mean(results["f1"])
 
-    return score
+    return metrics
 
 
 
@@ -134,7 +145,7 @@ def train_model(model, tokenized_datasets, tokenizer, training_args):
         model=model,
         args=training_args,
         train_dataset=tokenized_datasets["train"],
-        eval_dataset=tokenized_datasets["test"] if "test" in tokenized_datasets else None,
+        eval_dataset=tokenized_datasets["dev"] if "dev" in tokenized_datasets else None,
         tokenizer=tokenizer,
         data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),
         compute_metrics=lambda x: compute_metrics_val(tokenizer, x)
@@ -149,7 +160,7 @@ def train_model(model, tokenized_datasets, tokenizer, training_args):
 # GENERATION 
 
 # generation (on GPU) for test time
-def translate_text(texts, model, tokenizer, max_length=128, batch_size=32):
+def translate_text(texts, model, tokenizer, max_length=128, batch_size=4):
     """
     Translate texts using the model
 
