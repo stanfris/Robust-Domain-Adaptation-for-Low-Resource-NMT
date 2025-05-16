@@ -1,0 +1,22 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_a100
+#SBATCH --gres=gpu:1
+#SBATCH --gpus=1
+#SBATCH --job-name=bt
+#SBATCH --ntasks=1
+#SBATCH --time=04:00:00
+#SBATCH --output=slurm/slurm_%A.out
+
+module purge
+module load 2024
+module load Miniconda3/24.7.1-0
+
+# Activate your environment
+source activate nlp2
+# Run your code
+cd ../src
+
+python -m backtranslate --model_name=facebook/wmt19-ru-en --output_dir=../data/bt_medline_temp_3.0/train --temperature 3.0
+python -m train --train_dataset=../data/bt_medline_temp_3.0 --train_from_disk --output_dir=../results/wmt_bt_temp_3.0 --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
+python -m evaluate_model --model_name=../results/wmt_bt_temp_3.0 --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent

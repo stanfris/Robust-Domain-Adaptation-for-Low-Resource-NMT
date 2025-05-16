@@ -5,7 +5,10 @@ from evaluate import load
 import numpy as np
 # import vllm
 from tqdm import tqdm
-
+import random
+import copy
+from rank_bm25 import BM25Okapi
+import re 
 # PREPROCESSING
 # function to tokenize dataset for translation tasks
 def preprocess_data(dataset_dict, tokenizer_src, tokenizer_tgt, src_lang, tgt_lang, split, max_length=128):
@@ -53,6 +56,38 @@ def preprocess_data(dataset_dict, tokenizer_src, tokenizer_tgt, src_lang, tgt_la
     )
 
     return tokenized_dataset
+
+
+# function to augment data for backtranslation following Edunov et al. (2018)
+def augment_text(text, p):
+    words = text.split()
+    index = 0
+
+    while index < len(words):
+        r = random.random()
+        if r < p:
+            words.pop(index)
+
+        elif r < (2*p):
+            words[index] = "<mask>"
+            index += 1
+
+        elif r < (3*p):
+            left = max(0, index - 3)
+            right = min(len(words) - 1, index + 3)
+            partners = [j for j in range(left, right + 1) if j != index]
+            if partners:
+                swap_with = random.choice(partners)
+                words[index], words[swap_with] = words[swap_with], words[index]
+            index += 1
+
+        else:
+            index += 1
+
+    return " ".join(words)
+
+def augment_dataset(dataset, p=0.1):
+    return [augment_text(text, p) for text in dataset]
 
 def postprocess_predictions(predictions, labels, tokenizer):
     """
@@ -156,11 +191,87 @@ def train_model(model, tokenized_datasets, tokenizer, training_args):
     return model
 
 
+def less_data_selection(model, tokenized_datasets, tokenizer, training_args):
+    return None
+
+def tokenize_bm25(text):
+    """ Tokenizes text into a list of words, lowercase and word-boundaries. """
+    return re.findall(r"\b\w+\b", text.lower())
+
+def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev_sample_percentage,save_percentage, tokenizer, training_args, train_split="train", dev_split="dev", selection_method="bm25", src_lang="en", output_lang="ru"):
+    """
+    Selects a subset of the training data based on BM25 scores relative to the dev queries.
+
+    Args:
+        train_dataset: The training dataset (dict-like, should contain 'train' and 'en' keys).
+        dev_dataset: The development dataset (dict-like, should contain 'dev' and 'en' keys).
+        k: The number of top examples to select based on BM25 scores.
+
+    Returns:
+        Updated train_dataset with selected subset of examples.
+    """
+    if selection_method == "bm25":
+        # Tokenize training and development datasets
+        train_corpus = [tokenize_bm25(doc) for doc in train_dataset[train_split][src_lang]]
+        dev_corpus = [tokenize_bm25(doc) for doc in dev_dataset[dev_split][src_lang]]
+
+        # BM25 scoring
+        bm25 = BM25Okapi(dev_corpus)
+        all_scores = [bm25.get_scores(doc) for doc in train_corpus]
+        score_matrix = np.stack(all_scores)
+
+        final_scores = score_matrix.sum(axis=0)
+
+        top_k_indices = np.argsort(final_scores)[-int(len(final_scores) * save_percentage):]
+
+        selected_train_examples = train_dataset[train_split].select(top_k_indices)
+        selected_train_dataset = Dataset.from_dict({
+            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
+            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
+        })
+
+        train_dataset[train_split] = selected_train_dataset
+    elif selection_method == "random":
+        # Randomly select a percentage of the training dataset
+        num_samples = int(len(train_dataset[train_split]) * save_percentage)
+        indices = random.sample(range(len(train_dataset[train_split])), num_samples)
+        selected_train_examples = train_dataset[train_split].select(indices)
+
+        selected_train_dataset = Dataset.from_dict({
+            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
+            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
+        })
+
+        train_dataset[train_split] = selected_train_dataset
+    
+    if selection_method == "LESS" :
+        dev_size = int(dev_sample_percentage * len(tokenized_dev_set[dev_split]))
+        warmup_dev = tokenized_dev_set[dev_split].shuffle().select(range(dev_size))
+
+        model_warmup = copy.deepcopy(model)
+
+        # train model on 5% of dev set
+        print("Warmup, training model on 5% of dev set...")
+        warmup_trainer = Seq2SeqTrainer(
+            model=model_warmup,
+            args=training_args,
+            train_dataset=warmup_dev,
+            eval_dataset=tokenized_dev_set.get(dev_split, None),
+            tokenizer=tokenizer,
+            data_collator=DataCollatorForSeq2Seq(tokenizer, model=model)
+        )
+        warmup_trainer.train()
+
+        train_dataset = less_data_selection(model_warmup, train_dataset, warmup_dev, tokenizer, training_args)
+    return train_dataset
+
+
+        
 
 # GENERATION 
 
 # generation (on GPU) for test time
-def translate_text(texts, model, tokenizer, max_length=128, batch_size=4):
+def translate_text(texts, model, tokenizer, max_length=128, batch_size=4, temperature=0.0):
     """
     Translate texts using the model
 
@@ -196,7 +307,8 @@ def translate_text(texts, model, tokenizer, max_length=128, batch_size=4):
             outputs = model.generate(
                 **inputs,
                 max_length=max_length,
-                temperature=0.0,
+                temperature=temperature,
+                do_sample=temperature >0,
                 early_stopping=True
             )
 

@@ -19,8 +19,11 @@ parser.add_argument('--tgt_lang', default='en', type=str,
                     help='Target language code')
 parser.add_argument('--model_name', required=True, type=str,
                     help='Pretrained model name')
+parser.add_argument('--temperature', default=0.0, type=float,
+                    help='Temperature for sampling')
 
 parser.add_argument('--no_cuda', action='store_true', help='Disable CUDA')
+parser.add_argument('--augment_data', default=0.0, type=float, help='Enable data augmentation')
 
 # Dataset configuration
 parser.add_argument('--dataset', default='sethjsa/medline_ru_mono', type=str,
@@ -57,7 +60,15 @@ if __name__ == "__main__":
 
     # # test model
     russian_texts = train_dataset["train"][args.src_lang]
-    english_texts = translate_text(russian_texts, model, tokenizer, max_length=512, batch_size=64)
+
+    if args.augment_data > 0:
+        print("Data augmentation enabled.")
+        russian_texts = augment_dataset(russian_texts, args.augment_data)
+
+    if args.temperature != 0.0:
+        print(f"Using temperature: {args.temperature}")
+    
+    english_texts = translate_text(russian_texts, model, tokenizer, max_length=512, batch_size=64, temperature=args.temperature)
 
     # Create new Dataset with RU and EN columns
     new_dataset = Dataset.from_dict({"ru": russian_texts, "en": english_texts})

@@ -19,7 +19,7 @@ parser.add_argument('--model_name', default='Helsinki-NLP/opus-mt-en-ru', type=s
 parser.add_argument('--reversed_model_name', default=None, type=str,
                     help='Pretrained tokenizer name for encoding target language')
 # Dataset configuration
-parser.add_argument('--train_dataset', default='sethjsa/flores_en_ru', type=str, help='Name of the training dataset')
+parser.add_argument('--train_dataset', default='sethjsa/scipar_en_ru_parallel', type=str, help='Name of the training dataset')
 parser.add_argument('--dev_dataset', default='sethjsa/tico_en_ru', type=str, help='Name of the development dataset')
 parser.add_argument('--test_dataset', default='sethjsa/tico_en_ru', type=str, help='Name of the test dataset')
 parser.add_argument('--train_split', default='train', type=str, help='Dataset split to use for training')
@@ -29,11 +29,12 @@ parser.add_argument('--test_split', default='test', type=str, help='Dataset spli
 parser.add_argument('--train_from_disk', action='store_true', help='Load training dataset from disk')
 parser.add_argument('--dev_from_disk', action='store_true', help='Load dev dataset from disk')
 parser.add_argument('--test_from_disk', action='store_true', help='Load test dataset from disk')
+parser.add_argument('--opus_dataset', action='store_true', help='Use OPUS dataset for training')
 
 
 # Output and logging
 # Output directory must be manually set, to avoid conflicts in saving.
-parser.add_argument('--output_dir', required=True, type=str, help='Directory to save outputs')
+parser.add_argument('--output_dir', default='../results/tmp', type=str, help='Directory to save outputs')
 parser.add_argument('--report_to', default='tensorboard', type=str, help='Reporting tool to use (e.g., tensorboard)')
 
 # Training configuration
@@ -59,7 +60,9 @@ parser.add_argument('--load_best_model_at_end', default=True, type=bool, help='L
 parser.add_argument('--metric_for_best_model', default='bleu', type=str, help='Metric to determine best model')
 parser.add_argument('--greater_is_better', default=True, type=bool, help='If greater is better for the selected metric')
 parser.add_argument('--warmup_steps', default=0, type=int, help='Warmup steps')
-
+parser.add_argument('--dev_sample_percentage', default=0.05, type=float, help='Size of dev set for use in data selection')
+parser.add_argument('--save_percentage', default=0.20, type=float, help='Percentage of training data to save')
+parser.add_argument('--selection_method', default='bm25', type=str, help='Method for selecting training data')
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -74,11 +77,17 @@ if __name__ == "__main__":
         print("WARNING: No GPU detected! Training will be slow.")
         raise RuntimeError("No GPU detected! Training will be slow.")
     
-
-    if args.train_from_disk:
-        train_dataset = load_from_disk(args.train_dataset)
+    if args.opus_dataset:
+        train_dataset = load_dataset(
+        'text',
+        data_files=args.train_dataset,
+        split='train'
+    )
     else:
-        train_dataset = load_dataset(args.train_dataset)
+        if args.train_from_disk:
+            train_dataset = load_from_disk(args.train_dataset)
+        else:
+            train_dataset = load_dataset(args.train_dataset)
     if args.dev_from_disk:
         dev_dataset = load_from_disk(args.dev_dataset)
     else:
@@ -99,16 +108,9 @@ if __name__ == "__main__":
     tokenized_dev_dataset = preprocess_data(dev_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.dev_split)
     tokenized_test_dataset = preprocess_data(test_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.test_split)
 
-    print(test_dataset["test"][0:8], tokenized_test_dataset[0:8])
-
-    tokenized_datasets = DatasetDict({
-        "train": tokenized_train_dataset,
-        "dev": tokenized_dev_dataset,
-        "test": tokenized_test_dataset
-    })
+    
 
     # modify these as you wish; RQ3 could involve testing effects of various hyperparameters
-
     training_args = Seq2SeqTrainingArguments(
         output_dir=args.output_dir,
         evaluation_strategy=args.eval_strategy,
@@ -136,9 +138,27 @@ if __name__ == "__main__":
         warmup_steps=args.warmup_steps,
     )
 
-    # fine-tune model
-    print("Training model...")
+    print(len(tokenized_train_dataset))
+    train_dataset = select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_dataset, args.dev_sample_percentage, args.save_percentage, tokenizer, training_args, train_split=args.train_split, dev_split=args.dev_split, selection_method=args.selection_method, src_lang=args.src_lang, output_lang=args.tgt_lang)
+
+    print(len(train_dataset))
+
+    # print a few examples
+    for i in range(5):
+        print(f"Example {i}: {train_dataset['train'][i]}")
+
+    if args.selection_method != 'LESS':
+        tokenized_train_dataset = preprocess_data(train_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.train_split)
+
+    tokenized_datasets = DatasetDict({
+        "train": tokenized_train_dataset,
+        "dev": tokenized_dev_dataset,
+        "test": tokenized_test_dataset
+    })
+
     model = train_model(model, tokenized_datasets, tokenizer, training_args)
+    
+    print("Training complete!")
 
     # save model 
     model.save_pretrained(args.output_dir)
