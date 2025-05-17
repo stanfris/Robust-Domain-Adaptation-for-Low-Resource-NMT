@@ -175,13 +175,13 @@ def compute_metrics_test(src, tgt, preds, tokenizer, bleu=True, comet=False, ber
 # TRAINING
 # basic training loop
 
-def train_model(model, tokenized_datasets, tokenizer, training_args):
+def train_model(model, tokenized_datasets, tokenizer, training_args, train_split="train", dev_split="dev"):
     print("Training model...")
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_datasets["train"],
-        eval_dataset=tokenized_datasets["dev"] if "dev" in tokenized_datasets else None,
+        train_dataset=tokenized_datasets[train_split],
+        eval_dataset=tokenized_datasets[dev_split] if dev_split in tokenized_datasets else None,
         tokenizer=tokenizer,
         data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),
         compute_metrics=lambda x: compute_metrics_val(tokenizer, x)

@@ -101,8 +101,6 @@ if __name__ == "__main__":
     tokenized_dev_dataset = preprocess_data(dev_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.dev_split)
     tokenized_test_dataset = preprocess_data(test_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.test_split)
 
-    
-
     # modify these as you wish; RQ3 could involve testing effects of various hyperparameters
     training_args = Seq2SeqTrainingArguments(
         output_dir=args.output_dir,
@@ -149,7 +147,7 @@ if __name__ == "__main__":
         "test": tokenized_test_dataset
     })
 
-    model = train_model(model, tokenized_datasets, tokenizer, training_args)
+    model = train_model(model, tokenized_datasets, tokenizer, training_args, train_split=args.train_split, dev_split=args.dev_split)
     
     print("Training complete!")
 
