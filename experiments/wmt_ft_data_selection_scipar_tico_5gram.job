@@ -17,5 +17,5 @@ source activate nlp2
 # Run your code
 cd ../src
 
-python -m train_data_selection --train_dataset=sethjsa/scipar_en_ru_parallel --dev_dataset=sethjsa/tico_en_ru --output_dir=../results/wmt_ft_data_selection_scipar_tico_5gram --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5 --dev_sample_percentage 0.05 --save_percentage 0.20 --selection_method '5gram'
-python -m evaluate_model --model_name=../results/wmt_ft_data_selection_scipar_tico_5gram --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
+python -m train_data_selection --train_dataset=sethjsa/scipar_en_ru_parallel --dev_dataset=sethjsa/tico_en_ru --output_dir=/scratch-shared/scur2176/results/wmt_ft_data_selection_scipar_tico_5gram --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5 --dev_sample_percentage 0.05 --save_percentage 0.20 --selection_method '5gram'
+python -m evaluate_model --model_name=/scratch-shared/scur2176/results/wmt_ft_data_selection_scipar_tico_5gram --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
