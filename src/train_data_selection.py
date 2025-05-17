@@ -29,7 +29,6 @@ parser.add_argument('--test_split', default='test', type=str, help='Dataset spli
 parser.add_argument('--train_from_disk', action='store_true', help='Load training dataset from disk')
 parser.add_argument('--dev_from_disk', action='store_true', help='Load dev dataset from disk')
 parser.add_argument('--test_from_disk', action='store_true', help='Load test dataset from disk')
-parser.add_argument('--opus_dataset', action='store_true', help='Use OPUS dataset for training')
 
 
 # Output and logging
@@ -77,17 +76,11 @@ if __name__ == "__main__":
         print("WARNING: No GPU detected! Training will be slow.")
         raise RuntimeError("No GPU detected! Training will be slow.")
     
-    if args.opus_dataset:
-        train_dataset = load_dataset(
-        'text',
-        data_files=args.train_dataset,
-        split='train'
-    )
+
+    if args.train_from_disk:
+        train_dataset = load_from_disk(args.train_dataset)
     else:
-        if args.train_from_disk:
-            train_dataset = load_from_disk(args.train_dataset)
-        else:
-            train_dataset = load_dataset(args.train_dataset)
+        train_dataset = load_dataset(args.train_dataset)
     if args.dev_from_disk:
         dev_dataset = load_from_disk(args.dev_dataset)
     else:

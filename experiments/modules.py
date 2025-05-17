@@ -245,24 +245,16 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
         train_tokens = [txt.split() for txt in train_texts]
         dev_tokens   = [txt.split() for txt in dev_texts]
 
+        # Build a single Counter of all dev 4‑grams
         dev_counter = Counter()
         for toks in dev_tokens:
             dev_counter.update(extract_ngrams(toks, n=5))
 
+        # Score each train doc by summing dev frequencies of its own 4‑grams
         final_scores = np.array([
             sum(dev_counter[gram] for gram in extract_ngrams(toks, n=5))
             for toks in train_tokens
         ])
-
-        k = int(len(final_scores) * save_percentage)
-        top_k_indices = np.argsort(final_scores)[-k:]
-
-        selected_train_examples = train_dataset[train_split].select(top_k_indices)
-        selected_train_dataset = Dataset.from_dict({
-            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
-            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
-        })
-        train_dataset[train_split] = selected_train_dataset
 
 
     elif selection_method == "random":
