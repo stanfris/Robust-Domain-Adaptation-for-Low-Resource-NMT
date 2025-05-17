@@ -234,8 +234,9 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
 
         selected_train_examples = train_dataset[train_split].select(top_k_indices)
         selected_train_dataset = Dataset.from_dict({
-            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
-            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
+            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))],
+            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))]
+
         })
 
         new_dataset_dict = DatasetDict({
@@ -265,10 +266,9 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
 
         selected_train_examples = train_dataset[train_split].select(top_k_indices)
         selected_train_dataset = Dataset.from_dict({
-            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
-            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
+            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))],
+            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))]
         })
-        
         new_dataset_dict = DatasetDict({
             train_split: selected_train_dataset,
         })
@@ -282,8 +282,8 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
         selected_train_examples = train_dataset[train_split].select(indices)
 
         selected_train_dataset = Dataset.from_dict({
-            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
-            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
+            output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))],
+            src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))]
         })
 
         new_dataset_dict = DatasetDict({
