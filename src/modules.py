@@ -218,7 +218,9 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
     """
     if selection_method == "bm25":
         train_corpus = [tokenize_bm25(doc) for doc in train_dataset[train_split][src_lang]]
-        dev_corpus   = [tokenize_bm25(doc) for doc in dev_dataset[dev_split][src_lang]]
+
+        dev_size = int(dev_sample_percentage * len(dev_dataset[dev_split]))
+        dev_corpus = [tokenize_bm25(doc) for doc in dev_dataset[dev_split].shuffle().select(range(dev_size))[src_lang]]
 
         bm25 = BM25Okapi(train_corpus)
 
@@ -228,7 +230,7 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
         final_scores = score_matrix.sum(axis=0)  # shape (n_train,)
 
         k = int(len(final_scores) * save_percentage)
-        top_k_indices = np.argsort(final_scores)[-k:]
+        top_k_indices = np.argsort(-final_scores)[:k]
 
         selected_train_examples = train_dataset[train_split].select(top_k_indices)
         selected_train_dataset = Dataset.from_dict({
@@ -236,7 +238,11 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
             output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
         })
 
-        train_dataset[train_split] = selected_train_dataset
+        new_dataset_dict = DatasetDict({
+            train_split: selected_train_dataset,
+        })
+
+
 
     elif selection_method == "5gram":
         # Tokenize to word lists
@@ -255,14 +261,18 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
         ])
 
         k = int(len(final_scores) * save_percentage)
-        top_k_indices = np.argsort(final_scores)[-k:]
+        top_k_indices = np.argsort(-final_scores)[:k]
 
         selected_train_examples = train_dataset[train_split].select(top_k_indices)
         selected_train_dataset = Dataset.from_dict({
             src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
             output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
         })
-        train_dataset[train_split] = selected_train_dataset
+        
+        new_dataset_dict = DatasetDict({
+            train_split: selected_train_dataset,
+        })
+
 
 
     elif selection_method == "random":
@@ -276,7 +286,9 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
             output_lang: [selected_train_examples[i][output_lang] for i in range(len(selected_train_examples))]
         })
 
-        train_dataset[train_split] = selected_train_dataset
+        new_dataset_dict = DatasetDict({
+            train_split: selected_train_dataset,
+        })
     
     if selection_method == "LESS" :
         dev_size = int(dev_sample_percentage * len(tokenized_dev_set[dev_split]))
@@ -296,8 +308,12 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
         )
         warmup_trainer.train()
 
-        train_dataset = less_data_selection(model_warmup, train_dataset, warmup_dev, tokenizer, training_args)
-    return train_dataset
+        new_train_dataset = less_data_selection(model_warmup, train_dataset, warmup_dev, tokenizer, training_args)
+        new_dataset_dict = DatasetDict({
+            train_split: new_train_dataset,
+        })
+
+    return new_dataset_dict
 
 
         
