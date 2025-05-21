@@ -1,7 +1,7 @@
 from datasets import load_dataset, load_from_disk, Dataset, DatasetDict
 
 # Load datasets
-wikimedia_dataset = load_from_disk('../data/opus_wikimedia_en_ru')
+wikimedia_dataset = load_from_disk('./data/opus_wikimedia_en_ru')
 scipar_dataset = load_dataset('sethjsa/scipar_en_ru_parallel')
 
 # Select 90k samples from Wikimedia
@@ -28,7 +28,7 @@ train_dataset = DatasetDict({
 })
 
 # Save to disk
-train_dataset.save_to_disk('../data/mixed_dataset')
+train_dataset.save_to_disk('./data/mixed_dataset')
 
 
 # from datasets import load_from_disk

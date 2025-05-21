@@ -3,10 +3,10 @@
 #SBATCH --partition=gpu_a100
 #SBATCH --gres=gpu:1
 #SBATCH --gpus=1
-#SBATCH --job-name=wmt_ft_data_selection_mixed_tico_scipar_medline_random
+#SBATCH --job-name=wmt_ft_data_selection_mixed_mixed_wikimedia_medline_random
 #SBATCH --ntasks=1
 #SBATCH --time=04:00:00
-#SBATCH --output=slurm/slurm_%A.out
+#SBATCH --output=slurm/slurm_medline_%A.out
 
 module purge
 module load 2024
@@ -17,5 +17,5 @@ source activate nlp2
 # Run your code
 cd ../src
 
-python -m train_data_selection --train_dataset=../data/mixed_dataset_tico_scipar --dev_dataset=sethjsa/medline_ru_parallel --dev_split='train' --train_from_disk --output_dir /scratch-shared/scur2176/results/wmt_ft_data_selection_mixed_tico_scipar_medline_random_save_0.50 --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5 --dev_sample_percentage 0.30 --save_percentage 0.50 --selection_method=random
-python -m evaluate_model --model_name=/scratch-shared/scur2176/results/wmt_ft_data_selection_mixed_tico_scipar_medline_random_save_0.50 --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
+python -m train_data_selection --train_dataset=../data/mixed_dataset_tico_scipar --dev_dataset=sethjsa/medline_ru_parallel --dev_split='train' --train_from_disk --output_dir /scratch-shared/scur2176/results/wmt_ft_data_selection_mixed_mixed_wikimedia_medline_random_save_0.50 --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5 --dev_sample_percentage 0.30 --save_percentage 0.50 --selection_method=random
+python -m evaluate_model --model_name=/scratch-shared/scur2176/results/wmt_ft_data_selection_mixed_mixed_wikimedia_medline_random_save_0.50 --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
