@@ -1,0 +1,4 @@
+Length of train_dataset: 100000
+Loading model...
+Percentage of indices below 2100 bm25: 31.78%
+Percentage of indices below 2100 bm25: 10.36%

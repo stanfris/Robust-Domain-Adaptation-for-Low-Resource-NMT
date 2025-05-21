@@ -29,7 +29,6 @@ def preprocess_data(dataset_dict, tokenizer_src, tokenizer_tgt, src_lang, tgt_la
     def preprocess_function(examples):
         inputs = examples[src_lang]
         targets = examples[tgt_lang]
-        print(targets[:8])
 
         model_inputs = tokenizer_src(
             inputs,
@@ -204,7 +203,7 @@ def extract_ngrams(tokens, n=4):
     return set(tuple(tokens[i:i+n]) for i in range(len(tokens) - n + 1))
 
 
-def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev_sample_percentage,save_percentage, tokenizer, training_args, train_split="train", dev_split="dev", selection_method="bm25", src_lang="en", output_lang="ru"):
+def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev_sample_percentage,save_percentage, tokenizer, training_args, train_split="train", dev_split="dev", selection_method="bm25", src_lang="en", output_lang="ru", return_indices=False):
     """
     Selects a subset of the training data based on BM25 scores relative to the dev queries.
 
@@ -278,8 +277,8 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
     elif selection_method == "random":
         # Randomly select a percentage of the training dataset
         num_samples = int(len(train_dataset[train_split]) * save_percentage)
-        indices = random.sample(range(len(train_dataset[train_split])), num_samples)
-        selected_train_examples = train_dataset[train_split].select(indices)
+        top_k_indices = random.sample(range(len(train_dataset[train_split])), num_samples)
+        selected_train_examples = train_dataset[train_split].select(top_k_indices)
 
         selected_train_dataset = Dataset.from_dict({
             src_lang: [selected_train_examples[i][src_lang] for i in range(len(selected_train_examples))],
@@ -313,7 +312,10 @@ def select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_set, dev
             train_split: new_train_dataset,
         })
 
-    return new_dataset_dict
+    if return_indices:
+        return new_dataset_dict, top_k_indices
+    else:
+        return new_dataset_dict
 
 
         

@@ -1,4 +1,5 @@
 import argparse
+from copy import deepcopy
 import json
 import os
 from hashlib import md5
@@ -16,6 +17,7 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers.data import DataCollatorForSeq2Seq
 from torch.utils.data  import DataLoader
 from datasets import load_dataset, Dataset, DatasetDict, load_from_disk
+import matplotlib.pyplot as plt
 
 def prepare_batch(batch, device=torch.device("cuda:0")):
     """ Move the batch to the device. """
@@ -354,6 +356,8 @@ def main():
     # Model
     parser.add_argument('--model_name', required=True, type=str,
                         help='Pretrained model name')
+    parser.add_argument('--reversed_model_name', type=str,
+                        help='Reversed model name')
     # Arguments for training dataset, including:
     # Is training dataset from huggingface or local
     # Path to the training dataset / Name of the training dataset from huggingface
@@ -391,12 +395,24 @@ def main():
     model = AutoModelForSeq2SeqLM.from_pretrained(
         args.model_name, torch_dtype=torch.float)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    reversed_tokenizer = AutoTokenizer.from_pretrained(
+        args.reversed_model_name) if args.reversed_model_name else tokenizer
     model = model.to(device)
     
     if args.local:
         train_dataset = load_from_disk(args.train_dataset, split=args.train_split)
     else:
         train_dataset = load_dataset(args.train_dataset, split=args.train_split)
+    
+    if len(train_dataset) > 10000:
+        # select 10000 samples
+        print("Selecting 10000 samples from the training dataset, total samples: ", len(train_dataset))
+        torch.manual_seed(42)
+        idx = torch.randperm(len(train_dataset))
+        selected_idx = idx[:10000]
+        train_dataset = train_dataset.select(selected_idx.tolist())
+    # Backup
+    original_train_dataset = deepcopy(train_dataset)
 
     if args.local_dev:
         dev_dataset = load_from_disk(args.dev_dataset, split=args.dev_split)
@@ -412,11 +428,12 @@ def main():
         inputs = examples["en"]
         targets = examples["ru"]
         model_inputs = tokenizer(inputs, max_length=128, truncation=True, padding="max_length")
-        labels = tokenizer(targets, max_length=128, truncation=True, padding="max_length")
-        model_inputs["labels"] = labels["input_ids"]
+        labels_tokenized = reversed_tokenizer(text_target=targets, max_length=128, truncation=True, padding="max_length")
+        model_inputs["labels"] = labels_tokenized["input_ids"]
+        print(model_inputs["labels"])
         # Convert lists to tensors
-        for k in model_inputs:
-            model_inputs[k] = torch.tensor(model_inputs[k])
+        # for k in model_inputs:
+        #     model_inputs[k] = torch.tensor(model_inputs[k])
         return model_inputs
     # tokenize, but don't keep the columns "en" and "ru"
     train_dataset = train_dataset.map(tokenize_function, batched=True)
@@ -432,24 +449,98 @@ def main():
     dev_loader = torch.utils.data.DataLoader(
         dev_dataset, batch_size=1, shuffle=False, collate_fn=data_collator)
 
-    train_grads = collect_grads(
+    train_output_dir = os.path.join(args.output_dir, "train")
+    dev_output_dir = os.path.join(args.output_dir, "dev")
+
+    collect_grads(
         train_loader,
         model,
-        os.path.join(args.output_dir, "train"),
+        train_output_dir,
         proj_dim=[8192],
         gradient_type="sgd",
-        max_samples=1000
+        # max_samples=1000
     )
-    dev_grads = collect_grads(
+    collect_grads(
         dev_loader,
         model,
-        os.path.join(args.output_dir, "dev"),
+        dev_output_dir,
         proj_dim=[8192],
         gradient_type="sgd",
-        max_samples=1000
+        # max_samples=1000
     )
 
     print("Finished collecting gradients")
+
+    def calculate_influence_score(training_info: torch.Tensor, validation_info: torch.Tensor):
+        """Calculate the influence score.
+
+        Args:
+            training_info (torch.Tensor): training info (gradients/representations) stored in a tensor of shape N x N_DIM
+            validation_info (torch.Tensor): validation info (gradients/representations) stored in a tensor of shape N_VALID x N_DIM
+        """
+        # N x N_VALID
+        influence_scores = torch.matmul(
+            training_info, validation_info.transpose(0, 1))
+        return influence_scores
+
+
+    # calculate the influence score for each validation task
+    validation_path = os.path.join(dev_output_dir, "dim8192")
+    if os.path.isdir(validation_path):
+        validation_path = os.path.join(validation_path, "all_orig.pt")
+    validation_info = torch.load(validation_path)
+    dev_percentage = 0.05
+    # shuffle and select
+    torch.manual_seed(42)
+    idx = torch.randperm(validation_info.shape[0])
+    selected_idx = idx[:int(validation_info.shape[0] * dev_percentage)]
+    validation_info = validation_info[selected_idx]
+    # normalize on the second dimension by L2
+    validation_info = F.normalize(validation_info, dim=1)
+
+    if not torch.is_tensor(validation_info):
+        validation_info = torch.tensor(validation_info)
+    validation_info = validation_info.to(device).float()
+    gradient_path = os.path.join(train_output_dir, "dim8192")
+    if os.path.isdir(gradient_path):
+        gradient_path = os.path.join(gradient_path, "all_orig.pt")
+    training_info = torch.load(gradient_path)
+    training_info = F.normalize(training_info, dim=1)
+
+    training_info = training_info.to(device).float()
+
+    influence_score = calculate_influence_score(
+            training_info=training_info, validation_info=validation_info)
+    print(influence_score.shape)
+    influence_score = influence_score.max(-1)[0]
+    score_dir = os.path.join(args.output_dir, "influence_score")
+    if not os.path.exists(score_dir):
+        os.makedirs(score_dir)
+    output_file = os.path.join(score_dir, f"influence_score.pt")
+    torch.save(influence_score, output_file)
+    print("Saved influence score to {}".format(output_file))
+
+    # select the top k samples
+    train_percentage = 0.2
+    train_size = int(training_info.shape[0] * train_percentage)
+
+    # histogram of influence_score
+    plt.hist(influence_score.cpu().numpy(), bins=100)
+    plt.xlabel("Influence Score")
+    plt.ylabel("Count")
+    plt.title("Influence Score Histogram")
+    plt.savefig(os.path.join(score_dir, "influence_score_histogram.png"))
+
+    selected_idx = torch.topk(influence_score, train_size)[1]
+    print(original_train_dataset)
+    print(selected_idx.tolist())
+    selected_dataset = DatasetDict()
+    selected_dataset["train"] = original_train_dataset.select(selected_idx.tolist())
+    # print the first few lines
+    print(selected_dataset["train"][:20])
+    # save the selected dataset
+    selected_dataset.save_to_disk("../data/less_selected_dataset_example")
+
 
 if __name__ == "__main__":
     main()

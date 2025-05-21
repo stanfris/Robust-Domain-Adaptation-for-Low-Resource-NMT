@@ -4,3 +4,4 @@ __pycache__/
 *.out
 src/__pycache__/
 *.pyc
+grads
