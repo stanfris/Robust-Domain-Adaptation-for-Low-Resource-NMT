@@ -129,18 +129,20 @@ if __name__ == "__main__":
         warmup_steps=args.warmup_steps,
     )
 
-    print(len(tokenized_train_dataset))
-    train_dataset = select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_dataset, args.dev_sample_percentage, args.save_percentage, tokenizer, training_args, train_split=args.train_split, dev_split=args.dev_split, selection_method=args.selection_method, src_lang=args.src_lang, output_lang=args.tgt_lang)
+    print("Old dataset len: ", len(tokenized_train_dataset))
+    new_train_dataset = select_data_subset(model, train_dataset, dev_dataset, tokenized_dev_dataset, args.dev_sample_percentage, args.save_percentage, tokenizer, training_args, train_split=args.train_split, dev_split=args.dev_split, selection_method=args.selection_method, src_lang=args.src_lang, output_lang=args.tgt_lang)
 
-    print(len(train_dataset))
+    print("New dataset len: ", len(new_train_dataset['train']))
 
     # print a few examples
     for i in range(5):
-        print(f"Example {i}: {train_dataset['train'][i]}")
+        print(f"Example {i}: {new_train_dataset['train'][i]}")
+
+    print("len dev set ", len(dev_dataset[args.dev_split]))
+
 
     if args.selection_method != 'LESS':
-        tokenized_train_dataset = preprocess_data(train_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.train_split)
-
+        tokenized_train_dataset = preprocess_data(new_train_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.train_split)
     tokenized_datasets = DatasetDict({
         "train": tokenized_train_dataset,
         "dev": tokenized_dev_dataset,

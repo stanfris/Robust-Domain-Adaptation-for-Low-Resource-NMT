@@ -17,5 +17,5 @@ source activate nlp2
 # Run your code
 cd ../src
 
-python -m train --train_dataset=../data/less_selected_dataset_example --train_from_disk --output_dir=../results/less_example --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
-python -m evaluate_model --model_name=../results/less_example --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
+python -m train --train_dataset=../data/mixed_dataset_tico_scipar_selected --train_from_disk --output_dir=../results/less_mixed_tico_scipar_selected --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
+python -m evaluate_model --model_name=../results/less_mixed_tico_scipar_selected --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent

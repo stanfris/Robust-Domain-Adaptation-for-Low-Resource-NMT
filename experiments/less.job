@@ -17,4 +17,4 @@ source activate nlp2
 # Run your code
 cd ../src
 
-python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=sethjsa/scipar_en_ru_parallel --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/example
+python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=sethjsa/scipar_en_ru_parallel --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/example --dataset_output_dir=../data/less_selected_dataset_example

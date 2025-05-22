@@ -242,7 +242,8 @@ def collect_grads(dataloader,
         count += 1
 
         if count <= max_index:
-            print("skipping count", count)
+            if count%100==0:
+                print("skipping count", count)
             continue
 
         if gradient_type == "adam":
@@ -363,7 +364,7 @@ def main():
     # Path to the training dataset / Name of the training dataset from huggingface
     parser.add_argument('--train_dataset', required=True, type=str,
                         help='Path to the training dataset')
-    parser.add_argument('--local', action='store_true',
+    parser.add_argument('--train_from_disk', action='store_true',
                         help='If the training dataset is local')
     parser.add_argument('--train_split', type=str, default="train",
                         help='The split of the training dataset to use')
@@ -372,13 +373,15 @@ def main():
     # Path to the dev dataset / Name of the dev dataset from huggingface
     parser.add_argument('--dev_dataset', required=True, type=str,
                         help='Path to the dev dataset')
-    parser.add_argument('--local_dev', action='store_true',
+    parser.add_argument('--dev_from_disk', action='store_true',
                         help='If the dev dataset is local')
     parser.add_argument('--dev_split', type=str, default="dev",
                         help='The split of the dev dataset to use')
     # Output directory
     parser.add_argument('--output_dir', required=True, type=str,
-                        help='Where to save the dataset')
+                        help='Where to save the grads etc')
+    parser.add_argument('--dataset_output_dir', required=True, type=str,
+                        help='Where to save the selected dataset')
 
     args = parser.parse_args()
 
@@ -399,23 +402,25 @@ def main():
         args.reversed_model_name) if args.reversed_model_name else tokenizer
     model = model.to(device)
     
-    if args.local:
-        train_dataset = load_from_disk(args.train_dataset, split=args.train_split)
+    if args.train_from_disk:
+        train_dataset = load_from_disk(args.train_dataset)
+        train_dataset = train_dataset[args.train_split]
     else:
         train_dataset = load_dataset(args.train_dataset, split=args.train_split)
     
-    if len(train_dataset) > 10000:
-        # select 10000 samples
+    if len(train_dataset) > 20000:
+        # select 20000 samples
         print("Selecting 10000 samples from the training dataset, total samples: ", len(train_dataset))
         torch.manual_seed(42)
         idx = torch.randperm(len(train_dataset))
-        selected_idx = idx[:10000]
+        selected_idx = idx[:20000]
         train_dataset = train_dataset.select(selected_idx.tolist())
     # Backup
     original_train_dataset = deepcopy(train_dataset)
 
-    if args.local_dev:
-        dev_dataset = load_from_disk(args.dev_dataset, split=args.dev_split)
+    if args.dev_from_disk:
+        dev_dataset = load_from_disk(args.dev_dataset)
+        dev_dataset = dev_dataset[args.dev_split]
     else:
         dev_dataset = load_dataset(args.dev_dataset, split=args.dev_split)
 
@@ -430,7 +435,6 @@ def main():
         model_inputs = tokenizer(inputs, max_length=128, truncation=True, padding="max_length")
         labels_tokenized = reversed_tokenizer(text_target=targets, max_length=128, truncation=True, padding="max_length")
         model_inputs["labels"] = labels_tokenized["input_ids"]
-        print(model_inputs["labels"])
         # Convert lists to tensors
         # for k in model_inputs:
         #     model_inputs[k] = torch.tensor(model_inputs[k])
@@ -440,7 +444,6 @@ def main():
     train_dataset = train_dataset.remove_columns(["en", "ru"])
     dev_dataset = dev_dataset.map(tokenize_function, batched=True)
     dev_dataset = dev_dataset.remove_columns(["en", "ru"])
-    print(train_dataset, dev_dataset)
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, return_tensors="pt")
 
@@ -489,7 +492,7 @@ def main():
     if os.path.isdir(validation_path):
         validation_path = os.path.join(validation_path, "all_orig.pt")
     validation_info = torch.load(validation_path)
-    dev_percentage = 0.05
+    dev_percentage = 0.1
     # shuffle and select
     torch.manual_seed(42)
     idx = torch.randperm(validation_info.shape[0])
@@ -523,23 +526,31 @@ def main():
     # select the top k samples
     train_percentage = 0.2
     train_size = int(training_info.shape[0] * train_percentage)
+    print(train_size)
 
     # histogram of influence_score
-    plt.hist(influence_score.cpu().numpy(), bins=100)
+    plt.hist(influence_score.cpu().numpy(), bins=100, label="all", color="blue")
+    # also hist idx<2100 and idx>=2100 seperately
+    plt.hist(influence_score[:2100].cpu().numpy(), bins=100, alpha=0.5, label="idx<2100", color="red")
+    plt.hist(influence_score[2100:].cpu().numpy(), bins=100, alpha=0.5, label="idx>=2100", color="green")
     plt.xlabel("Influence Score")
     plt.ylabel("Count")
     plt.title("Influence Score Histogram")
+    plt.legend()
     plt.savefig(os.path.join(score_dir, "influence_score_histogram.png"))
 
     selected_idx = torch.topk(influence_score, train_size)[1]
-    print(original_train_dataset)
+    # print(original_train_dataset)
     print(selected_idx.tolist())
+    # see how many idx are <2100
+    print("Number of selected idx < 2100: ", sum([
+        1 for idx in selected_idx if idx < 2100]))
     selected_dataset = DatasetDict()
     selected_dataset["train"] = original_train_dataset.select(selected_idx.tolist())
     # print the first few lines
     print(selected_dataset["train"][:20])
     # save the selected dataset
-    selected_dataset.save_to_disk("../data/less_selected_dataset_example")
+    selected_dataset.save_to_disk(args.dataset_output_dir)
 
 
 if __name__ == "__main__":
