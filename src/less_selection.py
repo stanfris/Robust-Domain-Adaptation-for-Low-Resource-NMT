@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 import os
 from hashlib import md5
+import re
 from typing import Iterable, List, Optional
 
 import torch
@@ -171,7 +172,7 @@ def collect_grads(dataloader,
     save_interdev = 160  # save every 160 batches
 
     def _project(current_full_grads, projected_grads):
-        print(current_full_grads[0].shape)
+        # print(current_full_grads[0].shape)
         current_full_grads = torch.stack(current_full_grads).to(torch.float16)
         for i, projector in enumerate(projectors):
             current_projected_grads = projector.project(
@@ -246,29 +247,33 @@ def collect_grads(dataloader,
                 print("skipping count", count)
             continue
 
-        if gradient_type == "adam":
-            if count == 1:
-                print("Using Adam gradients")
-            vectorized_grads = obtain_gradients_with_adam(model, batch, m, v)
-        elif gradient_type == "sign":
-            if count == 1:
-                print("Using Sign gradients")
-            vectorized_grads = obtain_sign_gradients(model, batch)
-        else:
-            if count == 1:
-                print("Using SGD gradients")
-            vectorized_grads = obtain_gradients(model, batch)
+        try:
+            if gradient_type == "adam":
+                if count == 1:
+                    print("Using Adam gradients")
+                vectorized_grads = obtain_gradients_with_adam(model, batch, m, v)
+            elif gradient_type == "sign":
+                if count == 1:
+                    print("Using Sign gradients")
+                vectorized_grads = obtain_sign_gradients(model, batch)
+            else:
+                if count == 1:
+                    print("Using SGD gradients")
+                vectorized_grads = obtain_gradients(model, batch)
 
-        # add the gradients to the full_grads
-        full_grads.append(vectorized_grads)
-        model.zero_grad()
+            # add the gradients to the full_grads
+            full_grads.append(vectorized_grads)
+            model.zero_grad()
 
-        if count % project_interdev == 0:
-            _project(full_grads, projected_grads)
-            full_grads = []
+            if count % project_interdev == 0:
+                _project(full_grads, projected_grads)
+                full_grads = []
 
-        if count % save_interdev == 0:
-            _save(projected_grads, output_dirs)
+            if count % save_interdev == 0:
+                _save(projected_grads, output_dirs)
+        except Exception as e:
+            print(f"Error at row {count-1}: {e}")
+            exit(1)
 
         if max_samples is not None and count == max_samples:
             break
@@ -383,7 +388,13 @@ def main():
     parser.add_argument('--dataset_output_dir', required=True, type=str,
                         help='Where to save the selected dataset')
 
+    parser.add_argument('--ignore_first_2100', action='store_true')
+
     args = parser.parse_args()
+
+    if args.train_dataset == "../data/mixed_dataset":
+        flawed_rows = [4182, 7679, 7687, 10930, 10972, 10978, 11025, 15293, 16796, 16810, 19303, 19307, 21029, 21196, 21245, 21358, 21390, 28291, 36371, 39482, 65412, 66223, 73638, 76373, 84776, 87519]
+        print("Flawed rows: ", flawed_rows)
 
     # Check if CUDA is available and not disabled
     if torch.cuda.is_available():
@@ -408,13 +419,14 @@ def main():
     else:
         train_dataset = load_dataset(args.train_dataset, split=args.train_split)
     
-    if len(train_dataset) > 20000:
-        # select 20000 samples
-        print("Selecting 10000 samples from the training dataset, total samples: ", len(train_dataset))
-        torch.manual_seed(42)
-        idx = torch.randperm(len(train_dataset))
-        selected_idx = idx[:20000]
-        train_dataset = train_dataset.select(selected_idx.tolist())
+    # replace flawed rows with dummy sentences
+    def clear_row(example, idx):
+        if idx in flawed_rows:
+            example["en"] = ""
+            example["ru"] = ""
+        return example
+    train_dataset = train_dataset.map(clear_row, with_indices=True)
+
     # Backup
     original_train_dataset = deepcopy(train_dataset)
 
@@ -430,8 +442,15 @@ def main():
     # labels are from the column "ru"
     # returned input_ids and attention_mask should be tensors
     def tokenize_function(examples):
-        inputs = examples["en"]
-        targets = examples["ru"]
+        pattern = r"[^A-Za-z\u00C0-\u024F\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F\s.,!?:;\"'()\[\]\{\}\-]"
+
+        def clean_text(text):
+            if isinstance(text, list):
+                return [re.sub(pattern, '', t) for t in text]
+            else:
+                return re.sub(pattern, '', text)
+        inputs = clean_text(examples["en"])
+        targets = clean_text(examples["ru"])
         model_inputs = tokenizer(inputs, max_length=128, truncation=True, padding="max_length")
         labels_tokenized = reversed_tokenizer(text_target=targets, max_length=128, truncation=True, padding="max_length")
         model_inputs["labels"] = labels_tokenized["input_ids"]
@@ -539,6 +558,10 @@ def main():
     plt.legend()
     plt.savefig(os.path.join(score_dir, "influence_score_histogram.png"))
 
+    if args.ignore_first_2100:
+        # ignore the first 2100 samples
+        print("Ignoring the first 2100 samples")
+        influence_score[:2100] = -100
     selected_idx = torch.topk(influence_score, train_size)[1]
     # print(original_train_dataset)
     print(selected_idx.tolist())

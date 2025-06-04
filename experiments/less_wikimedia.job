@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_a100
+#SBATCH --gres=gpu:1
+#SBATCH --gpus=1
+#SBATCH --job-name=evaluate
+#SBATCH --ntasks=1
+#SBATCH --time=08:00:00
+#SBATCH --output=slurm/slurm_less_%A.out
+
+module purge
+module load 2024
+module load Miniconda3/24.7.1-0
+
+# Activate your environment
+source activate nlp2
+# Run your code
+cd ../src
+
+python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=../data/mixed_dataset --train_from_disk --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/wikimedia_dataset_full --dataset_output_dir=../data/wikimedia_dataset_selected_full --ignore_first_2100
+
+python -m train --train_dataset=../data/wikimedia_dataset_selected_full --train_from_disk --output_dir=../results/less_wikimedia_selected_full --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
+python -m evaluate_model --model_name=../results/less_wikimedia_selected_full --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent

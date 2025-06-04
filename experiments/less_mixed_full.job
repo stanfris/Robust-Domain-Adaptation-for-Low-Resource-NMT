@@ -1,0 +1,27 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu_a100
+#SBATCH --gres=gpu:1
+#SBATCH --gpus=1
+#SBATCH --job-name=evaluate
+#SBATCH --ntasks=1
+#SBATCH --time=08:00:00
+#SBATCH --output=slurm/slurm_less_%A.out
+
+module purge
+module load 2024
+module load Miniconda3/24.7.1-0
+
+# Activate your environment
+source activate nlp2
+# Run your code
+cd ../src
+
+# python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=../data/mixed_dataset_tico_scipar --train_from_disk --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/mixed_dataset_tico_scipar_full --dataset_output_dir=../data/mixed_dataset_tico_scipar_selected_full
+python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=../data/mixed_dataset --train_from_disk --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/mixed_dataset_full --dataset_output_dir=../data/mixed_dataset_selected_full
+# python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=../data/corrupted_mixed_scipar_tico --train_from_disk --dev_dataset=sethjsa/tico_en_ru --dev_split='dev' --output_dir=../grads/mixed_dataset_selected_corrupted_scipar_tico --dataset_output_dir=../data/mixed_dataset_selected_corrupted_scipar_tico --save_percentage 0.15
+# python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=sethjsa/scipar_en_ru_parallel  --dev_dataset=sethjsa/medline_ru_parallel --dev_split='train' --output_dir=../grads/mixed_dataset_selected_scipar_w_medline --dataset_output_dir=../data/mixed_dataset_selected_scipar_w_medline --save_percentage 0.20
+# python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=sethjsa/scipar_en_ru_parallel  --dev_dataset=sethjsa/tico_en_ru --dev_split='dev' --output_dir=../grads/mixed_dataset_selected_scipar_w_tico --dataset_output_dir=../data/mixed_dataset_selected_scipar_w_tico --save_percentage 0.20
+# python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=../data/mixed_dataset_small --train_from_disk --dev_dataset=sethjsa/tico_en_ru --dev_split=dev --output_dir=../grads/mixed_dataset_small --dataset_output_dir=../data/mixed_dataset_selected_small --save_percentage 0.20
+# python -m train --train_dataset=../data/mixed_dataset_selected_small --train_from_disk --output_dir=/scratch-shared/scur2176/results/wmt_ft_less_wikimedia_mixed_small--warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
+# python -m evaluate_model --model_name=/scratch-shared/scur2176/results/wmt_ft_less_wikimedia_mixed_small --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
