@@ -389,12 +389,16 @@ def main():
                         help='Where to save the selected dataset')
 
     parser.add_argument('--ignore_first_2100', action='store_true')
+    parser.add_argument('--use_adam', action='store_true',
+                        help='If to use Adam optimizer state for gradients')
 
     args = parser.parse_args()
 
     if args.train_dataset == "../data/mixed_dataset":
         flawed_rows = [4182, 7679, 7687, 10930, 10972, 10978, 11025, 15293, 16796, 16810, 19303, 19307, 21029, 21196, 21245, 21358, 21390, 28291, 36371, 39482, 65412, 66223, 73638, 76373, 84776, 87519]
         print("Flawed rows: ", flawed_rows)
+    else:
+        flawed_rows = []
 
     # Check if CUDA is available and not disabled
     if torch.cuda.is_available():
@@ -425,7 +429,8 @@ def main():
             example["en"] = ""
             example["ru"] = ""
         return example
-    train_dataset = train_dataset.map(clear_row, with_indices=True)
+    if len(flawed_rows) > 0:
+        train_dataset = train_dataset.map(clear_row, with_indices=True)
 
     # Backup
     original_train_dataset = deepcopy(train_dataset)
@@ -474,22 +479,81 @@ def main():
     train_output_dir = os.path.join(args.output_dir, "train")
     dev_output_dir = os.path.join(args.output_dir, "dev")
 
-    collect_grads(
-        train_loader,
-        model,
-        train_output_dir,
-        proj_dim=[8192],
-        gradient_type="sgd",
-        # max_samples=1000
-    )
-    collect_grads(
-        dev_loader,
-        model,
-        dev_output_dir,
-        proj_dim=[8192],
-        gradient_type="sgd",
-        # max_samples=1000
-    )
+    if args.use_adam:
+        print("Training the model on a random subset to collect Adam optimizer state")
+        # train the model on a random subset to collect Adam optimizer state
+        # use the random 5% samples
+        train_size = int(len(train_dataset) * 0.05)
+        print(f"Training on {train_size} samples")
+        original_pretrain_subset = original_train_dataset.shuffle(seed=42).select(range(train_size))
+        pretrain_subset = train_dataset.shuffle(seed=42).select(range(train_size))
+        # save the pretrain subset
+        print("Saving pretrain subset to disk")
+        pretrain_subset_to_save = DatasetDict()
+        pretrain_subset_to_save["train"] = original_pretrain_subset
+        pretrain_subset_to_save.save_to_disk(args.dataset_output_dir + "_pretrain_subset")
+        pretrain_loader = torch.utils.data.DataLoader(
+            pretrain_subset, batch_size=1, shuffle=False, collate_fn=data_collator)
+        # train the model for 1 epoch
+        model.train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+        for batch in tqdm(pretrain_loader, total=len(pretrain_loader)):
+            prepare_batch(batch)
+            optimizer.zero_grad()
+            loss = model(**batch).loss
+            loss.backward()
+            optimizer.step()
+        # collect the optimizer state
+        # exp_avg and exp_avg_sq are the first and second moment estimates, stored in optimizer
+        adam_optimizer_state = {}
+        for n, p in model.named_parameters():
+            if p.requires_grad and p in optimizer.state:
+                state = optimizer.state[p]
+                # Only save if exp_avg and exp_avg_sq exist (they should for Adam)
+                if "exp_avg" in state and "exp_avg_sq" in state:
+                    adam_optimizer_state[n] = {
+                        "exp_avg": state["exp_avg"].detach().cpu().clone(),
+                        "exp_avg_sq": state["exp_avg_sq"].detach().cpu().clone(),
+                    }
+                else:
+                    print(f"Oops, skipping {n} as it does not have exp_avg or exp_avg_sq in optimizer state.")
+        
+        print("Collected Adam optimizer state")
+        collect_grads(
+            train_loader,
+            model,
+            train_output_dir,
+            proj_dim=[8192],
+            adam_optimizer_state=adam_optimizer_state,
+            gradient_type="adam",
+            # max_samples=1000
+        )
+        collect_grads(
+            dev_loader,
+            model,
+            dev_output_dir,
+            proj_dim=[8192],
+            gradient_type="sgd",
+            # max_samples=1000
+        )
+
+    else:
+        collect_grads(
+            train_loader,
+            model,
+            train_output_dir,
+            proj_dim=[8192],
+            gradient_type="sgd",
+            # max_samples=1000
+        )
+        collect_grads(
+            dev_loader,
+            model,
+            dev_output_dir,
+            proj_dim=[8192],
+            gradient_type="sgd",
+            # max_samples=1000
+        )
 
     print("Finished collecting gradients")
 

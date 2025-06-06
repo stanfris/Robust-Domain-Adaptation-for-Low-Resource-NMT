@@ -174,7 +174,7 @@ def compute_metrics_test(src, tgt, preds, tokenizer, bleu=True, comet=False, ber
 # TRAINING
 # basic training loop
 
-def train_model(model, tokenized_datasets, tokenizer, training_args, train_split="train", dev_split="dev"):
+def train_model(model, tokenized_datasets, tokenizer, training_args, train_split="train", dev_split="dev", return_optimizer_state=False, use_optimizer_state=None):
     print("Training model...")
     trainer = Seq2SeqTrainer(
         model=model,
@@ -185,10 +185,19 @@ def train_model(model, tokenized_datasets, tokenizer, training_args, train_split
         data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),
         compute_metrics=lambda x: compute_metrics_val(tokenizer, x)
     )
+    if use_optimizer_state is not None:
+        print("Loading optimizer state...")
+        trainer.create_optimizer_and_scheduler(training_args.num_train_epochs)
+        trainer.optimizer.load_state_dict(use_optimizer_state)
+    else:
+        print("No optimizer state provided, training from scratch...")
 
     trainer.train()
     print("Training complete!")
-    return model
+    if return_optimizer_state:
+        return model, trainer.optimizer.state_dict()
+    else:
+        return model
 
 
 def less_data_selection(model, tokenized_datasets, tokenizer, training_args):

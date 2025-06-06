@@ -30,6 +30,8 @@ parser.add_argument('--train_from_disk', action='store_true', help='Load trainin
 parser.add_argument('--dev_from_disk', action='store_true', help='Load dev dataset from disk')
 parser.add_argument('--test_from_disk', action='store_true', help='Load test dataset from disk')
 
+parser.add_argument('--pretrain_dataset', default=None, help='Pretraining dataset name (optional)', type=str)
+parser.add_argument('--pretrain_from_disk', action='store_true', help='Load pretraining dataset from disk')
 
 # Output and logging
 # Output directory must be manually set, to avoid conflicts in saving.
@@ -99,7 +101,44 @@ if __name__ == "__main__":
     tokenized_dev_dataset = preprocess_data(dev_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.dev_split)
     tokenized_test_dataset = preprocess_data(test_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.test_split)
 
-    print(test_dataset["test"][0:8], tokenized_test_dataset[0:8])
+    # first train for 1 epoch on pretraining dataset, if provided
+    if args.pretrain_dataset is not None:
+        if args.pretrain_from_disk:
+            pretrain_dataset = load_from_disk(args.pretrain_dataset)
+        else:
+            pretrain_dataset = load_dataset(args.pretrain_dataset)
+        tokenized_pretrain_dataset = preprocess_data(pretrain_dataset, tokenizer, tokenizer_tgt, args.src_lang, args.tgt_lang, args.train_split)
+        print("Pretraining model on pretraining dataset...")
+        tokenized_datasets = DatasetDict({
+            "train": tokenized_pretrain_dataset,
+            "dev": tokenized_dev_dataset,  # using the same dataset for dev during pretraining
+            "test": tokenized_test_dataset   # using the same dataset for test during pretraining
+        })
+        pretrain_training_args = Seq2SeqTrainingArguments(
+            output_dir=args.output_dir,
+            evaluation_strategy="no",
+            save_strategy="no",
+            learning_rate=args.learning_rate,
+            per_device_train_batch_size=args.per_device_train_batch_size,
+            per_device_eval_batch_size=args.per_device_eval_batch_size,
+            weight_decay=args.weight_decay,
+            optim=args.optim,
+            adam_beta1=args.adam_beta1,
+            adam_beta2=args.adam_beta2,
+            adam_epsilon=args.adam_epsilon,
+            save_total_limit=args.save_total_limit,
+            num_train_epochs=1,  # pretrain for 1 epoch
+            predict_with_generate=args.predict_with_generate,
+            generation_num_beams=args.generation_num_beams,
+            generation_max_length=args.generation_max_length,
+            no_cuda=args.no_cuda,
+            fp16=args.fp16,
+            torch_compile=args.torch_compile,
+        )
+        # fine-tune model on pretraining dataset
+        model, optimizer_state = train_model(model, tokenized_datasets, tokenizer, pretrain_training_args, return_optimizer_state = True)
+    else:
+        optimizer_state = None
 
     tokenized_datasets = DatasetDict({
         "train": tokenized_train_dataset,
@@ -138,7 +177,7 @@ if __name__ == "__main__":
 
     # fine-tune model
     print("Training model...")
-    model = train_model(model, tokenized_datasets, tokenizer, training_args)
+    model = train_model(model, tokenized_datasets, tokenizer, training_args, use_optimizer_state=optimizer_state)
 
     # save model 
     model.save_pretrained(args.output_dir)
