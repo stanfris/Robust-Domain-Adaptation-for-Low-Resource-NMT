@@ -63,5 +63,24 @@ python -m train --train_dataset=../data/bt_medline_temp_2.0_augmented_0.05 --tra
 python -m evaluate_model --model_name=../results/wmt_bt_temp_2.0_augmented_0.05 --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
 ```
 
+### Running models with LESS
+LESS is taken directly from the implementation by (xia et al. 2024). it can be run in the following way:
+```bash
+cd ../src
+
+python less_selection.py --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --train_dataset=sethjsa/scipar_en_ru_parallel --dev_dataset=sethjsa/medline_ru_parallel --dev_split=train --output_dir=../grads/scipar_adam --dataset_output_dir=../data/scipar_selected_adam --use_adam
+python -m train --train_dataset=../data/scipar_selected_adam --train_from_disk --pretrain_dataset=../data/scipar_selected_adam_pretrain_subset --pretrain_from_disk --output_dir=../results/scipar_selected_adam --warmup_steps=100 --model_name=facebook/wmt19-en-ru --reversed_model_name=facebook/wmt19-ru-en --num_train_epochs=5
+python -m evaluate_model --model_name=../results/scipar_selected_adam --reversed_model_name=facebook/wmt19-ru-en --test_dataset=sethjsa/wmt20bio_en_ru_sent
+
+```
+Note again that this requires a save directory for the gradients as well as the model. 
+
 # Acknowledgements
 The code in this repository is partially based on the implementation of backtranslation and fine-tuning by Seth Aycock as part of the project course NLP2. 
+
+# References
+
+- Mengzhou Xia, Sadhika Malladi, Suchin Gururangan,
+Sanjeev Arora, and Danqi Chen. 2024. Less: Se-
+lecting influential data for targeted instruction tuning.
+Preprint, arXiv:2402.04333.
